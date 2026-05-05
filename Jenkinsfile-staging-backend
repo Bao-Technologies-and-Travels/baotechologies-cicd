@@ -1,0 +1,448 @@
+/* groovylint-disable CompileStatic, DuplicateMapLiteral, DuplicateStringLiteral, LineLength, MethodSize, NestedBlockDepth, NglParseError */
+pipeline {
+    agent any
+
+    environment {
+        NODE_ENV = 'staging'
+        SSH_KEY_ID = 'baotechnologies-key'
+        SSH_HOST = 'ashprincepageo@34.51.184.74'
+        APP_DIR = '$HOME/bao-website-backend'
+        APP_NAME = 'backend'
+        REPO_URL = 'git@github.com:Bao-Technologies-and-Travels/bao-website-backend.git'
+        BRANCH = 'main'
+        REPO = 'bao-website-backend'
+        DOMAIN = 'staging.baotechnologies.com'
+        EMAIL = 'pageo.fonsah@baotechnologiesandtravels.com'
+        BAOTECHNOLOGIES_DEV_TEAM = 'wendy.tembong@baotechnologiesandtravels.com,esther.eyere@baotechnologiesandtravels.com,toni.ebong@baotechnologiesandtravels.com,lionel.ngansop@baotechnologiesandtravels.com,arrey.johnson@baotechnologiesandtravels.com,beltus.tah@baotechnologiesandtravels.com,romanric.akam@baotechnologiesandtravels.com'
+        SLACK_CHANNEL = '#staging-deploy-release-notes'
+        LAST_COMMIT_FILE = '$HOME/last_deployed_commit_backend.txt'
+        GIT_PREVIOUS_COMMIT = ''
+        GIT_COMMIT = ''
+    }
+
+    stages {
+        stage('Setup server dependencies') {
+            steps {
+                echo 'Setting up server dependencies...'
+
+                sshagent([env.SSH_KEY_ID]) {
+                    // step 1: system updates
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                    set -e
+                        # Update and upgrade server packages
+                        sudo apt update && sudo apt upgrade -y
+                    '
+                    """
+
+                    // step 2: install Nodejs
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                        # Install Node.js and npm if not already installed
+                        curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
+                        sudo apt install -y nodejs
+                    '
+                    """
+
+                    // step 3: install pm2
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                        # Install PM2 globally
+                        sudo npm install -g pm2@latest
+                        pm2 --version
+                    '
+                    """
+
+                    // step 4: install other dependencies
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                        # Setup PM2
+                        pm2 startup systemd
+
+                        # Install serve
+                        sudo npm install -g serve
+
+                        # Install postgres
+                        sudo apt install -y postgresql postgresql-client-common -y
+
+                        echo "System dependencies installed successfully."
+                    '
+                    """
+                }
+            }
+        }
+
+        stage('Clone backend Repository') {
+            steps {
+                echo 'Cloning repository...'
+                sshagent([env.SSH_KEY_ID]) {
+                    sh '''
+                    ssh -o StrictHostKeyChecking=no ''' + SSH_HOST + ''' '
+                        set -e
+
+                        # Get current commit hash before cloning/pulling
+                        CURRENT_COMMIT=$(git ls-remote ''' + REPO_URL + ''' ''' + BRANCH + ''' | cut -f1)
+                        echo "Current commit: $CURRENT_COMMIT"
+
+                        if [ ! -d ~/bao-website-backend ]; then
+                            git clone -b ''' + BRANCH + ''' ''' + REPO_URL + ''' ~/bao-website-backend
+                        fi
+
+                        cd ''' + APP_DIR + '''
+
+                        # Store previous commit for changelog from last deployed file
+                        if [ -f ~/last_deployed_commit_backend.txt ]; then
+                            cat ~/last_deployed_commit_backend.txt > /tmp/previous_commit_backend.txt
+                        else
+                            echo "" > /tmp/previous_commit_backend.txt
+                        fi
+
+                        git fetch origin ''' + BRANCH + '''
+                        git checkout ''' + BRANCH + '''
+                        git reset --hard origin/''' + BRANCH + '''
+
+                        # Store current commit for environment
+                        echo "$CURRENT_COMMIT" > /tmp/current_commit_backend.txt
+
+                        echo "Backend repository cloned/updated successfully."
+                    '
+                    '''
+
+                    // Get previous and current commits for changelog
+                    script {
+                        String previousCommit = sh(
+                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/previous_commit_backend.txt 2>/dev/null || echo \"\"'",
+                            returnStdout: true
+                        ).trim()
+                        String currentCommit = sh(
+                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/current_commit_backend.txt 2>/dev/null || echo \"\"'",
+                            returnStdout: true
+                        ).trim()
+                        env.GIT_PREVIOUS_COMMIT = previousCommit
+                        env.GIT_COMMIT = currentCommit
+                    }
+                }
+            }
+        }
+
+        stage('Setup Backend Environment') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'db_url', variable: 'DATABASE_URL'),
+                    string(credentialsId: 'resend_api_key', variable: 'RESEND_API_KEY'),
+                    string(credentialsId: 'gcp_project_id',      variable: 'GCP_PROJECT_ID'),
+                    string(credentialsId: 'gcp_client_email',    variable: 'GCP_CLIENT_EMAIL'),
+                    string(credentialsId: 'gcp_private_key',     variable: 'GCP_PRIVATE_KEY'),
+                    string(credentialsId: 'contact_support_email',  variable: 'CONTACT_SUPPORT_EMAIL'),
+                ]) {
+                    sshagent([env.SSH_KEY_ID]) {
+                        sh """
+                        ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                            set -e
+                            cd ${APP_DIR}
+
+                            # Remove existing .env if any
+                            rm -f .env
+
+                            # Create .env file with actual secrets
+                            cat > .env << EOF
+NODE_ENV=staging
+PORT=3001
+
+DATABASE_URL="${DATABASE_URL}"
+
+EMAIL_SERVICE=resend
+RESEND_API_KEY="${RESEND_API_KEY}"
+EMAIL_FROM_NAME="Baotechnologies Team"
+EMAIL_FROM_ADDRESS="no-reply@baotechnologies.com"
+
+GCP_PROJECT_ID="${GCP_PROJECT_ID}"
+GCP_CLIENT_EMAIL="${GCP_CLIENT_EMAIL}"
+GCP_PRIVATE_KEY="${GCP_PRIVATE_KEY}"
+GCP_STORAGE_BUCKET="${GCP_STORAGE_BUCKET}"
+
+FRONTEND_URL="https://${DOMAIN}"
+CORS_ORIGINS="https://${DOMAIN}"
+BCRYPT_ROUNDS=12
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+CONTACT_SUPPORT_EMAIL="${CONTACT_SUPPORT_EMAIL}"
+EOF
+
+                            chmod 600 .env
+                        '
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Deploy backend on server ') {
+            steps {
+                echo 'Deploying frontend on server...'
+
+                sshagent([env.SSH_KEY_ID]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                        echo "Starting backend deployment..."
+
+                        cd ${APP_DIR}
+
+                        if [ ! -f .env ]; then
+                            echo "ERROR: .env file not found!"
+                            exit 1
+                        fi
+
+                        rm -rf dist/ node_modules package-lock.json
+
+                        npm install
+
+                        npx prisma generate
+                        npx prisma db push
+
+                        npm run build
+
+                        pm2 delete ${APP_NAME} || true
+                        pm2 start dist/server.js --name ${APP_NAME} -- --port 3001
+                        pm2 save
+
+                        echo "Backend deployed successfully."
+                    '
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                emailext(
+                        subject: "${env.JOB_NAME} - Build #${env.BUILD_NUMBER} - ${currentBuild.currentResult}",
+                        to: "${env.EMAIL}",
+                        from: 'no-reply@baotechnologies.com',
+                        replyTo: 'no-reply@baotechnologies.com',
+                        body: """
+                            <html>
+                                <body style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
+                                    <h2 style="color: #2E86C1;">Jenkins Build Notification</h2>
+                                    <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                                    <p><strong>Build Number:</strong> ${env.BUILD_NUMBER}</p>
+                                    <p><strong>Status:</strong> <span style="color: ${currentBuild.currentResult == 'SUCCESS' ? 'green' : 'red'};">${currentBuild.currentResult}</span></p>
+                                    <p>Check the <a href="${env.BUILD_URL}">console output</a> for details.</p>
+                                    <hr>
+                                    <p style="font-size: 0.9em; color: #565;">This is an automated email from Jenkins. Please do not reply.</p>
+                                </body>
+                            </html>
+                        """,
+                        mimeType: 'text/html'
+                    )
+            }
+        }
+        success {
+            script {
+                emailext(
+                subject: "${env.JOB_NAME} - ${currentBuild.currentResult}",
+                to: "${env.BAOTECHNOLOGIES_DEV_TEAM}",
+                from: 'no-reply@baotechnologies.com',
+                replyTo: 'no-reply@baotechnologies.com',
+                body: """
+                    <html>
+                        <body style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
+                            <h2 style="color: #2E86C1;">Baotechnologies Staging Notification</h2>
+                            <p><strong>Job:</strong> ${env.JOB_NAME}</p>
+                            <p><strong>Status:</strong> <span style="color: ${currentBuild.currentResult == 'SUCCESS' ? 'green' : 'red'};">${currentBuild.currentResult}</span></p>
+                            <p>Check the <a href="${env.BUILD_URL}"> console output</a> for details and also see recent changes at <a href="${env.DOMAIN}"></a>.</p>
+                            <hr>
+                            <p style="font-size: 0.9em; color: #565;">This is an automated email from Jenkins. Please do not reply.</p>
+                        </body>
+                    </html>
+                """,
+                mimeType: 'text/html'
+                )
+
+                // Send Slack notification with release notes
+                generateAndSendReleaseNotes()
+
+                // Update last deployed commit
+                sshagent([env.SSH_KEY_ID]) {
+                    sh """
+                    ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
+                        CURRENT_COMMIT=\$(cd ${APP_DIR} && git rev-parse HEAD 2>/dev/null)
+                        if [ -n "\$CURRENT_COMMIT" ]; then
+                            echo "\$CURRENT_COMMIT" > ${LAST_COMMIT_FILE}
+                        fi
+                    '
+                    """
+                }
+            }
+        }
+    }
+}
+
+// Helper function to send Slack notifications
+void sendSlackNotification(Map args) {
+    String status = args.status
+    String color = args.color
+    String channel = args.channel
+    Boolean includeReleaseNotes = args.containsKey('includeReleaseNotes') ? args.includeReleaseNotes : true
+    String releaseNotesText = args.releaseNotes ?: ''
+
+    String message = "${status}: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}\n"
+    message += "Environment: ${env.NODE_ENV}\n"
+    message += "Branch: ${env.BRANCH}\n"
+    message += "Repository: ${env.REPO}\n"
+    message += "Domain: https://${env.DOMAIN}\n"
+    message += "<${env.BUILD_URL}|View Console Output>\n"
+
+    if (includeReleaseNotes && releaseNotesText) {
+        message += "\n*📝 Release Notes:*\n${releaseNotesText}"
+    }
+
+    slackSend(
+        channel: channel,
+        color: color,
+        message: message
+    )
+}
+
+// Helper function to generate and send release notes
+void generateAndSendReleaseNotes() {
+    try {
+        String releaseNotes = ''
+        String previousCommit = env.GIT_PREVIOUS_COMMIT?.trim()
+        String currentCommit = env.GIT_COMMIT?.trim()
+        String lastCommitFile = env.LAST_COMMIT_FILE ?: "${env.HOME}/last_deployed_commit.txt"
+
+        echo '=== Release Notes Debug Info (initial) ==='
+        echo "GIT_PREVIOUS_COMMIT: ${previousCommit}"
+        echo "GIT_COMMIT: ${currentCommit}"
+
+        sshagent([env.SSH_KEY_ID]) {
+            if (!previousCommit) {
+                String fetchCmd = "if [ -f '${lastCommitFile}' ]; then cat '${lastCommitFile}'; fi"
+                try {
+                    previousCommit = sh(
+                        script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} '${fetchCmd} 2>/dev/null || true'",
+                        returnStdout: true
+                    ).trim()
+                    echo "Resolved previous commit from file: ${previousCommit ?: '<empty>'}"
+                } catch (groovy.lang.GroovyRuntimeException ex) {
+                    echo "Failed to resolve previous commit from file: ${ex.message}"
+                    previousCommit = ''
+                }
+            }
+
+            if (!currentCommit) {
+                String revParseCmd = "cd ${APP_DIR} && git rev-parse HEAD 2>/dev/null || true"
+                try {
+                    currentCommit = sh(
+                        script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} '${revParseCmd}'",
+                        returnStdout: true
+                    ).trim()
+                    echo "Resolved current commit from git rev-parse: ${currentCommit ?: '<empty>'}"
+                } catch (groovy.lang.GroovyRuntimeException ex) {
+                    echo "Failed to resolve current commit from git: ${ex.message}"
+                    currentCommit = ''
+                }
+            }
+        }
+
+        env.GIT_PREVIOUS_COMMIT = previousCommit ?: ''
+        env.GIT_COMMIT = currentCommit ?: ''
+
+        echo '=== Release Notes Debug Info (resolved) ==='
+        echo "GIT_PREVIOUS_COMMIT: ${env.GIT_PREVIOUS_COMMIT}"
+        echo "GIT_COMMIT: ${env.GIT_COMMIT}"
+        echo "Previous commit exists: ${env.GIT_PREVIOUS_COMMIT != null && env.GIT_PREVIOUS_COMMIT != ''}"
+        echo "Current commit exists: ${env.GIT_COMMIT != null && env.GIT_COMMIT != ''}"
+        echo "Commits are different: ${env.GIT_PREVIOUS_COMMIT != env.GIT_COMMIT}"
+
+        // If we have previous and current commits, generate changelog
+        if (previousCommit && currentCommit && previousCommit != currentCommit) {
+            echo '=== Attempting Git Changelog Plugin ==='
+            // Try to use Git Changelog plugin if available
+            try {
+                step([
+                    $class: 'GitChangelog',
+                    from: [type: 'COMMIT', value: previousCommit],
+                    to: [type: 'COMMIT', value: currentCommit],
+                    format: 'PLAIN',
+                    outputFile: 'changelog.txt'
+                ])
+                releaseNotes = readFile('changelog.txt').trim()
+                sh 'rm -f changelog.txt'
+                echo 'Git Changelog plugin succeeded'
+            } catch (groovy.lang.GroovyRuntimeException e) {
+                echo "Git Changelog plugin failed: ${e.message}"
+                echo '=== Falling back to git log with commit range ==='
+                // Fallback: Use git log to generate release notes from remote server
+                sshagent([env.SSH_KEY_ID]) {
+                    try {
+                        releaseNotes = sh(
+                            script: '''
+                                ssh -o StrictHostKeyChecking=no ''' + SSH_HOST + ''' '
+                                    cd ''' + APP_DIR + '''
+                                    echo "Getting commits between ''' + previousCommit + ''' and ''' + currentCommit + '''"
+                                    git log --no-merges --pretty=format:"• %s (%h) - %an" ''' + previousCommit + '''..''' + currentCommit + ''' 2>/dev/null | grep -v "Merge pull request #" || echo ""
+                                '
+                            ''',
+                            returnStdout: true
+                        ).trim()
+                        echo "SSH git log with range succeeded, got ${releaseNotes.length()} characters"
+                    } catch (groovy.lang.GroovyRuntimeException ex) {
+                        echo "SSH git log with range failed: ${ex.message}"
+                        releaseNotes = "Failed to get commit range: ${ex.message}"
+                    }
+                }
+            }
+        } else {
+            echo '=== No commit range available, using fallback ==='
+            // If we can't get previous commit, get recent commits from remote server
+            sshagent([env.SSH_KEY_ID]) {
+                try {
+                    releaseNotes = sh(
+                        script: '''
+                            ssh -o StrictHostKeyChecking=no ''' + SSH_HOST + ''' '
+                                cd ''' + APP_DIR + '''
+                                echo "Failed to get last commits from repository, getting last 10 commits from repository"
+                                git log --no-merges --pretty=format:"• %s (%h) - %an" -20 2>/dev/null | grep -v "Merge pull request #" || echo "Unable to generate release notes"
+                            '
+                        ''',
+                        returnStdout: true
+                    ).trim()
+                    echo "SSH git log fallback succeeded, got ${releaseNotes.length()} characters"
+                } catch (groovy.lang.GroovyRuntimeException ex) {
+                    echo "SSH git log fallback failed: ${ex.message}"
+                    releaseNotes = "Failed to get recent commits: ${ex.message}"
+                }
+            }
+        }
+        if (!releaseNotes?.trim()) {
+            releaseNotes = 'No new changes detected in this deployment.'
+        }
+
+        // Truncate if too long (Slack has message length limits)
+        final int maxSlackMessageLength = 1500
+        if (releaseNotes.length() > maxSlackMessageLength) {
+            releaseNotes = releaseNotes.substring(0, maxSlackMessageLength) + '\n... (truncated)'
+        }
+
+        // Send success Slack notification with release notes
+        sendSlackNotification(
+            status: 'SUCCESS',
+            color: 'good',
+            channel: env.SLACK_CHANNEL,
+            releaseNotes: releaseNotes
+        )
+    } catch (groovy.lang.GroovyRuntimeException e) {
+        echo "Failed to generate or send release notes: ${e.message}"
+        // Still send success notification without release notes
+        slackSend(
+            channel: env.SLACK_CHANNEL,
+            color: 'good',
+            message: "SUCCESS: ${env.JOB_NAME} - Build #${env.BUILD_NUMBER}\nEnvironment: ${env.NODE_ENV}\n<${env.BUILD_URL}|View Console Output>\n\n*Note:* Release notes could not be generated."
+        )
+    }
+}

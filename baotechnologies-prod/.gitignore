@@ -1,7 +1,6 @@
 .terraform/
 *.tfstate
-*.tfstate.*.backup
-*.tfstate.*.backup
+*.tfstate.*
 .terraform.lock.*
 terraform.tfvars
 *.tfplan
