@@ -20,7 +20,7 @@ variable "service_account_email" {
 
 variable "disk_size" {
   type    = number
-  default = 10
+  default = 20
 }
 
 variable "zone" {

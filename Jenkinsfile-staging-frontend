@@ -5,7 +5,7 @@ pipeline {
     environment {
         NODE_ENV = 'staging'
         SSH_KEY_ID = 'baotechnologies-key'
-        SSH_HOST = 'ashprincepageo@34.51.170.249'
+        SSH_HOST = 'ashprincepageo@34.51.201.92'
         APP_DIR = '$HOME/bao-website-frontend'
         APP_NAME = 'frontend'
         REPO_URL = 'git@github.com:Bao-Technologies-and-Travels/bao-website-frontend.git'
