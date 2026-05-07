@@ -30,10 +30,6 @@ variable "instance_type" {
   type = string
 }
 
-variable "staging_domain" {
-  type = string
-}
-
 variable "prod_domain" {
   type = string
 }

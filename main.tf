@@ -24,11 +24,9 @@ module "compute_staging" {
 }
 
 module "dns" {
-  source         = "./modules/dns"
-  prod_domain    = var.prod_domain
-  staging_domain = var.staging_domain
-  project        = var.project
+  source      = "./modules/dns"
+  prod_domain = var.prod_domain
+  project     = var.project
 
-  staging_ip_address = module.compute_staging.external_ip
   jenkins_ip_address = module.compute_staging.external_ip
 }

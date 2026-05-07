@@ -1,8 +1,8 @@
-output "staging_url" {
-  value = "https://staging.${var.prod_domain}"
+output "prod_url" {
+  value = "https://${var.prod_domain}"
 }
 
-output "staging_instance_ip" {
+output "instance_ip" {
   value = module.compute_staging.external_ip
 }
 

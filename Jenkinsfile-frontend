@@ -3,7 +3,6 @@ pipeline {
     agent any
 
     environment {
-        NODE_ENV = 'staging'
         SSH_KEY_ID = 'baotechnologies-key'
         SSH_HOST = 'ashprincepageo@34.51.201.92'
         APP_DIR = '$HOME/bao-website-frontend'
@@ -11,7 +10,7 @@ pipeline {
         REPO_URL = 'git@github.com:Bao-Technologies-and-Travels/bao-website-frontend.git'
         BRANCH = 'main'
         REPO = 'bao-website-frontend'
-        DOMAIN = 'staging.baotechnologies.com'
+        DOMAIN = 'baotechnologies.com'
         EMAIL = 'pageo.fonsah@baotechnologiesandtravels.com'
         BAOTECHNOLOGIES_DEV_TEAM = 'wendy.tembong@baotechnologiesandtravels.com,esther.eyere@baotechnologiesandtravels.com,toni.ebong@baotechnologiesandtravels.com,lionel.ngansop@baotechnologiesandtravels.com,arrey.johnson@baotechnologiesandtravels.com,beltus.tah@baotechnologiesandtravels.com,romanric.akam@baotechnologiesandtravels.com'
         SLACK_CHANNEL = '#staging-deploy-release-notes'
@@ -227,7 +226,7 @@ EOF
                 body: """
                     <html>
                         <body style="font-family: Arial, sans-serif; line-height: 1.5; color: #333;">
-                            <h2 style="color: #2E86C1;">Baotechnologies Staging Notification</h2>
+                            <h2 style="color: #2E86C1;">Baotechnologies Jenkins Notification</h2>
                             <p><strong>Job:</strong> ${env.JOB_NAME}</p>
                             <p><strong>Status:</strong> <span style="color: ${currentBuild.currentResult == 'SUCCESS' ? 'green' : 'red'};">${currentBuild.currentResult}</span></p>
                             <p>Check the <a href="${env.BUILD_URL}"> console output</a> for details and also see recent changes at <a href="${env.DOMAIN}"></a>.</p>

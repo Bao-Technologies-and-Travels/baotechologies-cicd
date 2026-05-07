@@ -5,16 +5,8 @@ resource "google_dns_managed_zone" "prod" {
   project     = var.project
 }
 
-resource "google_dns_record_set" "staging" {
-  name         = "${var.staging_domain}."
-  type         = "A"
-  ttl          = 300
-  managed_zone = google_dns_managed_zone.prod.name
-  rrdatas      = [var.staging_ip_address]
-}
-
 resource "google_dns_record_set" "jenkins" {
-  name         = "jenkins.${var.staging_domain}."
+  name         = "jenkins.${var.prod_domain}."
   type         = "A"
   ttl          = 300
   managed_zone = google_dns_managed_zone.prod.name
@@ -37,14 +29,6 @@ resource "google_dns_record_set" "www_prod" {
   ttl          = 300
   managed_zone = google_dns_managed_zone.prod.name
   rrdatas      = ["${var.prod_domain}."]
-}
-
-resource "google_dns_record_set" "www_staging" {
-  name         = "www.staging.${var.prod_domain}."
-  type         = "CNAME"
-  ttl          = 300
-  managed_zone = google_dns_managed_zone.prod.name
-  rrdatas      = ["staging.${var.prod_domain}."]
 }
 
 resource "google_dns_record_set" "resend_dkim" {
