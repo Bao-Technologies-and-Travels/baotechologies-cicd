@@ -13,6 +13,14 @@ resource "google_dns_record_set" "jenkins" {
   rrdatas      = [var.jenkins_ip_address]
 }
 
+resource "google_dns_record_set" "prod" {
+  name         = "${var.prod_domain}."
+  type         = "A"
+  ttl          = 300
+  managed_zone = google_dns_managed_zone.prod.name
+  rrdatas      = [var.jenkins_ip_address]
+}
+
 resource "google_dns_record_set" "caa" {
   name         = "${var.prod_domain}."
   type         = "CAA"
