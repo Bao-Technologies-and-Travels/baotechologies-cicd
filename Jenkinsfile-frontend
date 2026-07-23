@@ -149,7 +149,7 @@ GCP_PROJECT_ID="${GCP_PROJECT_ID}"
 GCP_CLIENT_EMAIL="${GCP_CLIENT_EMAIL}"
 GCP_PRIVATE_KEY="${GCP_PRIVATE_KEY}"
 
-REACT_APP_BLOG_API_URL="https://blog.${DOMAIN}/wp-json/wp/v2"
+REACT_APP_BLOG_API_URL="https://blog.baoafrik/wp-json/wp/v2"
 EOF
 
                             chmod 600 .env
