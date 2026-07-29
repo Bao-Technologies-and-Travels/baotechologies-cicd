@@ -1,3 +1,8 @@
+moved {
+  from = module.compute_staging
+  to   = module.compute
+}
+
 module "vpc" {
   source      = "./modules/vpc"
   project     = var.project
@@ -13,7 +18,7 @@ module "iam" {
   project = var.project
 }
 
-module "compute_staging" {
+module "compute" {
   source                = "./modules/compute"
   project               = var.project
   zone                  = var.zone
@@ -24,9 +29,11 @@ module "compute_staging" {
 }
 
 module "dns" {
-  source      = "./modules/dns"
-  prod_domain = var.prod_domain
-  project     = var.project
+  source        = "./modules/dns"
+  domain        = var.domain
+  dns_zone_name = var.dns_zone_name
+  dns_project   = var.dns_project
 
-  jenkins_ip_address = module.compute_staging.external_ip
+  staging_ip_address = module.compute.external_ip
+  jenkins_ip_address = module.compute.external_ip
 }

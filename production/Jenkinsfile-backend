@@ -1,20 +1,20 @@
-/* groovylint-disable CompileStatic, DuplicateMapLiteral, DuplicateStringLiteral, LineLength, MethodSize, NestedBlockDepth */
+/* groovylint-disable CompileStatic, DuplicateMapLiteral, DuplicateStringLiteral, LineLength, MethodSize, NestedBlockDepth, NglParseError */
 pipeline {
     agent any
 
     environment {
         SSH_KEY_ID = 'baotechnologies-key'
         SSH_HOST = 'ashprincepageo@34.51.201.92'
-        APP_DIR = '$HOME/bao-website-frontend'
-        APP_NAME = 'frontend'
-        REPO_URL = 'git@github.com:Bao-Technologies-and-Travels/bao-website-frontend.git'
+        APP_DIR = '$HOME/bao-website-backend'
+        APP_NAME = 'backend'
+        REPO_URL = 'git@github.com:Bao-Technologies-and-Travels/bao-website-backend.git'
         BRANCH = 'main'
-        REPO = 'bao-website-frontend'
+        REPO = 'bao-website-backend'
         DOMAIN = 'baotechnologies.com'
         EMAIL = 'pageo.fonsah@baotechnologiesandtravels.com'
         BAOTECHNOLOGIES_DEV_TEAM = 'wendy.tembong@baotechnologiesandtravels.com,esther.eyere@baotechnologiesandtravels.com,toni.ebong@baotechnologiesandtravels.com,lionel.ngansop@baotechnologiesandtravels.com,arrey.johnson@baotechnologiesandtravels.com,romanric.akam@baotechnologiesandtravels.com'
-        SLACK_CHANNEL = '#staging-deploy-release-notes'
-        LAST_COMMIT_FILE = '$HOME/last_deployed_commit_frontend.txt'
+        SLACK_CHANNEL = '#prod-deploy-release-notes'
+        LAST_COMMIT_FILE = '$HOME/last_deployed_commit_backend.txt'
         GIT_PREVIOUS_COMMIT = ''
         GIT_COMMIT = ''
     }
@@ -71,9 +71,9 @@ pipeline {
             }
         }
 
-        stage('Clone frontend Repository') {
+        stage('Clone backend Repository') {
             steps {
-                echo 'Cloning frontend repository...'
+                echo 'Cloning repository...'
                 sshagent([env.SSH_KEY_ID]) {
                     sh '''
                     ssh -o StrictHostKeyChecking=no ''' + SSH_HOST + ''' '
@@ -83,17 +83,17 @@ pipeline {
                         CURRENT_COMMIT=$(git ls-remote ''' + REPO_URL + ''' ''' + BRANCH + ''' | cut -f1)
                         echo "Current commit: $CURRENT_COMMIT"
 
-                        if [ ! -d ~/bao-website-frontend ]; then
-                            git clone -b ''' + BRANCH + ''' ''' + REPO_URL + ''' ~/bao-website-frontend
+                        if [ ! -d ~/bao-website-backend ]; then
+                            git clone -b ''' + BRANCH + ''' ''' + REPO_URL + ''' ~/bao-website-backend
                         fi
 
                         cd ''' + APP_DIR + '''
 
                         # Store previous commit for changelog from last deployed file
-                        if [ -f ~/last_deployed_commit_frontend.txt ]; then
-                            cat ~/last_deployed_commit_frontend.txt > /tmp/previous_commit.txt
+                        if [ -f ~/last_deployed_commit_backend.txt ]; then
+                            cat ~/last_deployed_commit_backend.txt > /tmp/previous_commit_backend.txt
                         else
-                            echo "" > /tmp/previous_commit.txt
+                            echo "" > /tmp/previous_commit_backend.txt
                         fi
 
                         git fetch origin ''' + BRANCH + '''
@@ -101,20 +101,20 @@ pipeline {
                         git reset --hard origin/''' + BRANCH + '''
 
                         # Store current commit for environment
-                        echo "$CURRENT_COMMIT" > /tmp/current_commit.txt
+                        echo "$CURRENT_COMMIT" > /tmp/current_commit_backend.txt
 
-                        echo "Frontend repository cloned/updated successfully."
+                        echo "Backend repository cloned/updated successfully."
                     '
                     '''
 
                     // Get previous and current commits for changelog
                     script {
                         String previousCommit = sh(
-                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/previous_commit.txt 2>/dev/null || echo \"\"'",
+                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/previous_commit_backend.txt 2>/dev/null || echo \"\"'",
                             returnStdout: true
                         ).trim()
                         String currentCommit = sh(
-                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/current_commit.txt 2>/dev/null || echo \"\"'",
+                            script: "ssh -o StrictHostKeyChecking=no ${SSH_HOST} 'cat /tmp/current_commit_backend.txt 2>/dev/null || echo \"\"'",
                             returnStdout: true
                         ).trim()
                         env.GIT_PREVIOUS_COMMIT = previousCommit
@@ -124,12 +124,15 @@ pipeline {
             }
         }
 
-        stage('Setup frontend Environment') {
+        stage('Setup Backend Environment') {
             steps {
                 withCredentials([
+                    string(credentialsId: 'db_url', variable: 'DATABASE_URL'),
+                    string(credentialsId: 'resend_api_key', variable: 'RESEND_API_KEY'),
                     string(credentialsId: 'gcp_project_id',      variable: 'GCP_PROJECT_ID'),
                     string(credentialsId: 'gcp_client_email',    variable: 'GCP_CLIENT_EMAIL'),
                     string(credentialsId: 'gcp_private_key',     variable: 'GCP_PRIVATE_KEY'),
+                    string(credentialsId: 'contact_support_email',  variable: 'CONTACT_SUPPORT_EMAIL'),
                 ]) {
                     sshagent([env.SSH_KEY_ID]) {
                         sh """
@@ -142,14 +145,26 @@ pipeline {
 
                             # Create .env file with actual secrets
                             cat > .env << EOF
-REACT_APP_API_URL=https://${DOMAIN}/api
-REACT_APP_WS_URL=wss://${DOMAIN}
+PORT=3001
+
+DATABASE_URL="${DATABASE_URL}"
+
+EMAIL_SERVICE=resend
+RESEND_API_KEY="${RESEND_API_KEY}"
+EMAIL_FROM_NAME="Baotechnologies Team"
+EMAIL_FROM_ADDRESS="no-reply@baotechnologies.com"
 
 GCP_PROJECT_ID="${GCP_PROJECT_ID}"
 GCP_CLIENT_EMAIL="${GCP_CLIENT_EMAIL}"
 GCP_PRIVATE_KEY="${GCP_PRIVATE_KEY}"
 
-REACT_APP_BLOG_API_URL="https://blog.baoafrik/wp-json/wp/v2"
+FRONTEND_URL="https://${DOMAIN}"
+CORS_ORIGINS="https://${DOMAIN}"
+BCRYPT_ROUNDS=12
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_REQUESTS=100
+
+CONTACT_SUPPORT_EMAIL="${CONTACT_SUPPORT_EMAIL}"
 EOF
 
                             chmod 600 .env
@@ -160,29 +175,36 @@ EOF
             }
         }
 
-        stage('Deploy frontend ') {
+        stage('Deploy backend on server ') {
             steps {
                 echo 'Deploying frontend on server...'
 
                 sshagent([env.SSH_KEY_ID]) {
                     sh """
                     ssh -o StrictHostKeyChecking=no ${SSH_HOST} '
-                        echo "Starting frontend deployment..."
+                        echo "Starting backend deployment..."
 
                         cd ${APP_DIR}
-                        rm -rf node_modules package-lock.json build/
+
+                        if [ ! -f .env ]; then
+                            echo "ERROR: .env file not found!"
+                            exit 1
+                        fi
+
+                        rm -rf dist/ node_modules package-lock.json
 
                         npm install
-                        export NODE_OPTIONS=--max-old-space-size=4096
+
+                        npx prisma generate
+                        npx prisma db push
+
                         npm run build
 
                         pm2 delete ${APP_NAME} || true
-                        pm2 start serve --name ${APP_NAME} -- -s build -l 3000
-
+                        pm2 start dist/server.js --name ${APP_NAME} -- --port 3001
                         pm2 save
-                        pm2 list
 
-                        echo "Frontend deployment completed successfully."
+                        echo "Backend deployed successfully."
                     '
                     """
                 }
@@ -215,7 +237,6 @@ EOF
                     )
             }
         }
-
         success {
             script {
                 emailext(
@@ -422,4 +443,3 @@ void generateAndSendReleaseNotes() {
         )
     }
 }
-

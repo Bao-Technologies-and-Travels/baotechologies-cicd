@@ -1,4 +1,4 @@
-resource "google_compute_instance" "staging" {
+resource "google_compute_instance" "prod_instance" {
   name         = "${var.project}-instance"
   machine_type = var.machine_type
   zone         = var.zone
@@ -31,4 +31,3 @@ resource "google_compute_instance" "staging" {
     ]
   }
 }
-

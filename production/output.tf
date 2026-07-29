@@ -1,9 +1,9 @@
 output "prod_url" {
-  value = "https://${var.prod_domain}"
+  value = "https://${var.domain}"
 }
 
 output "instance_ip" {
-  value = module.compute_staging.external_ip
+  value = module.compute.external_ip
 }
 
 output "dns_name_servers" {

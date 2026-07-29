@@ -30,6 +30,14 @@ variable "instance_type" {
   type = string
 }
 
-variable "prod_domain" {
-  type = string
+variable "domain" {
+  type        = string
+  description = "Root domain for production DNS records (e.g. baotechnologies.com)."
 }
+
+variable "dns_zone_name" {
+  type        = string
+  description = "Name of the Cloud DNS managed zone."
+}
+
+

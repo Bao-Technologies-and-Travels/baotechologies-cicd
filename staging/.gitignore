@@ -1,0 +1,7 @@
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.*
+terraform.tfvars
+*.tfplan
+*.txt
